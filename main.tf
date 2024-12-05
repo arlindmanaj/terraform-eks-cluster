@@ -59,6 +59,7 @@ resource "aws_route_table_association" "public" {
 resource "aws_security_group" "eks" {
   vpc_id = aws_vpc.main.id
 
+  # Ingress Rules for external access (80, 443)
   ingress {
     from_port   = 443
     to_port     = 443
@@ -73,11 +74,20 @@ resource "aws_security_group" "eks" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # Ingress Rule for internal communication within VPC (use CIDR for private subnet)
+  ingress {
+    from_port   = 10250
+    to_port     = 10250
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]  # Adjust based on your VPC CIDR block
+  }
+
+  # Egress Rules for communication within the VPC and to the internet
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"]  # Allow all outbound traffic
   }
 
   tags = {
