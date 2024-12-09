@@ -1,8 +1,8 @@
-
 provider "aws" {
   region = "eu-north-1" 
 }
 
+# VPC
 resource "aws_vpc" "main" {
   cidr_block = "10.0.0.0/16"
 
@@ -11,28 +11,30 @@ resource "aws_vpc" "main" {
   }
 }
 
-resource "aws_subnet" "public" {
+# Public Subnet in Availability Zone A
+resource "aws_subnet" "public_a" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.32.0/24"
   availability_zone       = "eu-north-1a"
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "public-subnet"
+    Name = "public-subnet-a"
   }
 }
 
-resource "aws_subnet" "private" {
-  vpc_id     = aws_vpc.main.id
-  cidr_block = "10.0.33.0/24"
-  availability_zone       = "eu-north-1a"
-  
+# Private Subnet in Availability Zone B
+resource "aws_subnet" "private_b" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.33.0/24"
+  availability_zone       = "eu-north-1b"
 
   tags = {
-    Name = "private-subnet"
+    Name = "private-subnet-b"
   }
 }
 
+# Internet Gateway
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.main.id
 
@@ -41,6 +43,7 @@ resource "aws_internet_gateway" "igw" {
   }
 }
 
+# Public Route Table
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
@@ -54,11 +57,13 @@ resource "aws_route_table" "public" {
   }
 }
 
-resource "aws_route_table_association" "public" {
-  subnet_id      = aws_subnet.public.id
+# Associate Public Subnet with Public Route Table
+resource "aws_route_table_association" "public_a" {
+  subnet_id      = aws_subnet.public_a.id
   route_table_id = aws_route_table.public.id
 }
 
+# Security Group for EKS
 resource "aws_security_group" "eks" {
   vpc_id = aws_vpc.main.id
 
@@ -69,7 +74,7 @@ resource "aws_security_group" "eks" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-   ingress {
+  ingress {
     from_port   = 1025
     to_port     = 65535
     protocol    = "tcp"
@@ -87,7 +92,8 @@ resource "aws_security_group" "eks" {
     Name = "eks-security-group"
   }
 }
-# Elastic IP for the NAT Gateway
+
+# Elastic IP for NAT Gateway
 resource "aws_eip" "nat" {
   domain = "vpc"
 
@@ -99,24 +105,19 @@ resource "aws_eip" "nat" {
 # NAT Gateway
 resource "aws_nat_gateway" "nat" {
   allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.public.id
+  subnet_id     = aws_subnet.public_a.id
 
   tags = {
     Name = "nat-gateway"
   }
 }
 
-# Update Private Route Table to use NAT Gateway
-resource "aws_route_table_association" "private" {
-  subnet_id      = aws_subnet.private.id
-  route_table_id = aws_route_table.private.id
-}
-
+# Private Route Table
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.main.id
 
   route {
-    cidr_block = "0.0.0.0/0"
+    cidr_block     = "0.0.0.0/0"
     nat_gateway_id = aws_nat_gateway.nat.id
   }
 
@@ -125,6 +126,13 @@ resource "aws_route_table" "private" {
   }
 }
 
+# Associate Private Subnet with Private Route Table
+resource "aws_route_table_association" "private_b" {
+  subnet_id      = aws_subnet.private_b.id
+  route_table_id = aws_route_table.private.id
+}
+
+# IAM Role for EKS Cluster
 resource "aws_iam_role" "eks_cluster_role" {
   name = "eks-cluster-role"
 
@@ -152,19 +160,22 @@ resource "aws_iam_role_policy_attachment" "eks_service_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
 }
 
+# EKS Cluster
 resource "aws_eks_cluster" "my_cluster" {
   name     = "my-eks-cluster"
   role_arn = aws_iam_role.eks_cluster_role.arn
- #Ja kena ndrru manualisht nga publiku dhe privati ne private
+
   vpc_config {
-    subnet_ids = [aws_subnet.private.id]
+    subnet_ids = [aws_subnet.private_b.id]
   }
 }
+
+# Worker Nodes
 resource "aws_eks_node_group" "worker_nodes" {
   cluster_name    = aws_eks_cluster.my_cluster.name
   node_group_name = "worker-nodes"
   node_role_arn   = aws_iam_role.eks_node_role.arn
-  subnet_ids      = [aws_subnet.public.id, aws_subnet.private.id]
+  subnet_ids      = [aws_subnet.public_a.id, aws_subnet.private_b.id]
 
   scaling_config {
     desired_size = 2
@@ -172,6 +183,8 @@ resource "aws_eks_node_group" "worker_nodes" {
     min_size     = 1
   }
 }
+
+# IAM Role for Worker Nodes
 resource "aws_iam_role" "eks_node_role" {
   name = "eks-node-role"
 
@@ -198,6 +211,7 @@ resource "aws_iam_role_policy_attachment" "ec2_container_registry_read_only" {
   role       = aws_iam_role.eks_node_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
+
 resource "aws_iam_role_policy_attachment" "eks_cni_policy" {
   policy_arn = "arn:aws:iam::727646502890:policy/AmazonEKSCNIPolicy"
   role       = aws_iam_role.eks_node_role.name
