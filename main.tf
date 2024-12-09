@@ -14,7 +14,7 @@ resource "aws_vpc" "main" {
 # Public Subnet in Availability Zone A
 resource "aws_subnet" "public_a" {
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.32.0/24"
+  cidr_block              = "10.0.38.0/24"
   availability_zone       = "eu-north-1a"
   map_public_ip_on_launch = true
 
@@ -26,7 +26,7 @@ resource "aws_subnet" "public_a" {
 # Private Subnet in Availability Zone B
 resource "aws_subnet" "private_b" {
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.33.0/24"
+  cidr_block              = "10.0.39.0/24"
   availability_zone       = "eu-north-1b"
 
   tags = {
@@ -127,6 +127,7 @@ resource "aws_route_table" "private" {
 }
 
 # Associate Private Subnet with Private Route Table
+
 resource "aws_route_table_association" "private_b" {
   subnet_id      = aws_subnet.private_b.id
   route_table_id = aws_route_table.private.id
@@ -166,7 +167,7 @@ resource "aws_eks_cluster" "my_cluster" {
   role_arn = aws_iam_role.eks_cluster_role.arn
 
   vpc_config {
-    subnet_ids = [aws_subnet.private_b.id]
+    subnet_ids = [aws_subnet.private_b.id, aws_subnet.public_a.id]
   }
 }
 
