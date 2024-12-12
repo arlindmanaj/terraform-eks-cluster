@@ -17,6 +17,7 @@ resource "aws_subnet" "public_a" {
   cidr_block              = "10.0.38.0/24"
   availability_zone       = "eu-north-1a"
   map_public_ip_on_launch = true
+  
 
   tags = {
     Name = "public-subnet-a"
@@ -31,6 +32,29 @@ resource "aws_subnet" "private_b" {
 
   tags = {
     Name = "private-subnet-b"
+  }
+}
+
+# Private Subnet in AZ C
+resource "aws_subnet" "private_c" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.41.0/24"
+  availability_zone       = "eu-north-1a"
+
+  tags = {
+    Name = "private-subnet-c"
+  }
+}
+
+# Private Subnet in AZ D
+resource "aws_subnet" "private_d" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.40.0/24"
+  availability_zone       = "eu-north-1b"
+  
+
+  tags = {
+    Name = "private-subnet-d"
   }
 }
 
@@ -133,6 +157,16 @@ resource "aws_route_table_association" "private_b" {
   route_table_id = aws_route_table.private.id
 }
 
+resource "aws_route_table_association" "private_c" {
+  subnet_id      = aws_subnet.private_c.id
+  route_table_id = aws_route_table.private.id
+}
+
+resource "aws_route_table_association" "private_d" {
+  subnet_id      = aws_subnet.private_d.id
+  route_table_id = aws_route_table.private.id
+}
+
 # IAM Role for EKS Cluster
 resource "aws_iam_role" "eks_cluster_role" {
   name = "eks-cluster-role"
@@ -150,41 +184,6 @@ resource "aws_iam_role" "eks_cluster_role" {
     ]
   })
 }
-
-resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
-  role       = aws_iam_role.eks_cluster_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-}
-
-resource "aws_iam_role_policy_attachment" "eks_service_policy" {
-  role       = aws_iam_role.eks_cluster_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
-}
-
-# EKS Cluster
-resource "aws_eks_cluster" "my_cluster" {
-  name     = "my-eks-cluster"
-  role_arn = aws_iam_role.eks_cluster_role.arn
-
-  vpc_config {
-    subnet_ids = [aws_subnet.private_b.id, aws_subnet.public_a.id]
-  }
-}
-
-# Worker Nodes
-resource "aws_eks_node_group" "worker_nodes" {
-  cluster_name    = aws_eks_cluster.my_cluster.name
-  node_group_name = "worker-nodes"
-  node_role_arn   = aws_iam_role.eks_node_role.arn
-  subnet_ids      = [aws_subnet.public_a.id, aws_subnet.private_b.id]
-
-  scaling_config {
-    desired_size = 2
-    max_size     = 3
-    min_size     = 1
-  }
-}
-
 # IAM Role for Worker Nodes
 resource "aws_iam_role" "eks_node_role" {
   name = "eks-node-role"
@@ -202,7 +201,17 @@ resource "aws_iam_role" "eks_node_role" {
     ]
   })
 }
+# IAM Cluster Policies
+resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
+  role       = aws_iam_role.eks_cluster_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+}
 
+resource "aws_iam_role_policy_attachment" "eks_service_policy" {
+  role       = aws_iam_role.eks_cluster_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
+}
+# IAM Worker Node Policies
 resource "aws_iam_role_policy_attachment" "eks_worker_node_policy" {
   role       = aws_iam_role.eks_node_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
@@ -214,6 +223,33 @@ resource "aws_iam_role_policy_attachment" "ec2_container_registry_read_only" {
 }
 
 resource "aws_iam_role_policy_attachment" "eks_cni_policy" {
-  policy_arn = "arn:aws:iam::727646502890:policy/AmazonEKSCNIPolicy"
   role       = aws_iam_role.eks_node_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
 }
+
+
+# EKS Cluster
+resource "aws_eks_cluster" "my_cluster" {
+  name     = "my-eks-cluster"
+  role_arn = aws_iam_role.eks_cluster_role.arn
+
+  vpc_config {
+    subnet_ids = [aws_subnet.private_b.id, aws_subnet.private_c.id]
+  }
+}
+
+# Worker Nodes
+resource "aws_eks_node_group" "worker_nodes" {
+  cluster_name    = aws_eks_cluster.my_cluster.name
+  node_group_name = "worker-nodes"
+  node_role_arn   = aws_iam_role.eks_node_role.arn
+  subnet_ids      = [aws_subnet.private_b.id, aws_subnet.private_c.id]
+
+  scaling_config {
+    desired_size = 2
+    max_size     = 3
+    min_size     = 1
+  }
+}
+
+
